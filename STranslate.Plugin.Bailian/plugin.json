@@ -1,0 +1,10 @@
+{
+  "PluginID": "f9a9eb2b-8d95-4a0d-943a-4572a7cae3df",
+  "Name": "百炼翻译与 OCR",
+  "Description": "Alibaba Cloud Model Studio translation and OCR with pay-as-you-go, Coding Plan, and Token Plan.",
+  "Author": "SchweppesSoda",
+  "Version": "2.3.0",
+  "Website": "https://github.com/SchweppesSoda/STranslate.Plugin.Bailian",
+  "ExecuteFileName": "STranslate.Plugin.Bailian.dll",
+  "IconPath": "icon.png"
+}

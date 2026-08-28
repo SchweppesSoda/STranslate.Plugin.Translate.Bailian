@@ -1,0 +1,39 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <LangVersion>preview</LangVersion>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <EnableWindowsTargeting>true</EnableWindowsTargeting>
+    <RepositoryUrl>https://github.com/SchweppesSoda/STranslate.Plugin.Bailian</RepositoryUrl>
+    <ManagePackageVersionsCentrally>false</ManagePackageVersionsCentrally>
+    <TargetFramework>net10.0-windows</TargetFramework>
+    <UseWPF>true</UseWPF>
+    <AppendTargetFrameworkToOutputPath>false</AppendTargetFrameworkToOutputPath>
+    <AppendRuntimeIdentifierToOutputPath>false</AppendRuntimeIdentifierToOutputPath>
+    <AssemblyName>STranslate.Plugin.Bailian</AssemblyName>
+    <RootNamespace>STranslate.Plugin.Bailian</RootNamespace>
+  </PropertyGroup>
+
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)' == 'Debug|AnyCPU'">
+    <OutputPath>..\..\..\..\.artifacts\Debug\Plugins\STranslate.Plugin.Bailian\</OutputPath>
+    <DebugType>portable</DebugType>
+    <Optimize>false</Optimize>
+  </PropertyGroup>
+
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)' == 'Release|AnyCPU'">
+    <OutputPath>..\.artifacts\</OutputPath>
+    <DebugType>none</DebugType>
+    <Optimize>true</Optimize>
+    <EnableAutoPackage>true</EnableAutoPackage>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <Content Include="icon.png" CopyToOutputDirectory="Always" />
+    <Content Include="plugin.json" CopyToOutputDirectory="Always" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="STranslate.Plugin" Version="1.0.14" />
+  </ItemGroup>
+</Project>
+
