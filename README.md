@@ -8,6 +8,10 @@
 
 STranslate 按服务实例分别保存配置；翻译与 OCR 可以各自选择模式、模型和 API Key，不需要额外的双凭证开关。
 
+已在 STranslate 2.0.9 完成实际安装验证：
+
+![STranslate 2.0.9 安装结果](docs/stranslate-2.0.9-installed.jpg)
+
 ## 计费模式
 
 | 模式 | Base URL | API Key |
