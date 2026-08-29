@@ -29,9 +29,9 @@ STranslate 按服务实例分别保存配置；翻译与 OCR 可以各自选择�
 
 - 普通模型使用 OpenAI Chat Completions；`qwen-mt-*` 使用百炼机器翻译请求格式。
 - 翻译支持 SSE 流式输出、取消、思考参数和推理内容过滤。
-- Coding Plan、Token Plan 或普通视觉模型通过视觉对话完成纯文字 OCR。
+- Coding Plan、Token Plan 或普通视觉模型通过视觉对话完成 OCR，并要求模型按 `[0,999]` 归一化坐标返回逐行文本框；插件根据 STranslate 提供的图片尺寸转换为像素坐标，因此可用于图片翻译。
 - 按量模式下选择 `qwen3.5-ocr` 或 `qwen-vl-ocr` 时调用 `advanced_recognition`：优先使用 `location` 四点坐标，仅有 `rotate_rect` 时计算四角；无有效坐标时返回普通文字结果。
-- 只有上述两个按量 OCR 模型声明 Bounding Box 能力，因此通用视觉 OCR 不会出现在需要坐标的图片翻译列表中。
+- 已知视觉模型和自定义视觉模型会声明 Bounding Box 能力；已知不支持图像输入的模型仍不会出现在图片翻译 OCR 列表中。
 - 插件不自动重试、探测模型或切换计费模式。
 
 ## 开发
@@ -44,7 +44,7 @@ dotnet build .\STranslate.Plugin.Bailian\STranslate.Plugin.Bailian.csproj -c Rel
 dotnet run --project .\tests\STranslate.Plugin.Bailian.Tests.csproj -c Release
 ```
 
-Release 构建由 `STranslate.Plugin` SDK 自动生成 `.artifacts/plugins/STranslate.Plugin.Bailian.spkg`。测试覆盖三种端点、普通与 Qwen-MT 请求、SSE 分片和取消、错误脱敏、纯文字 OCR、两种官方坐标格式、双接口契约及安装包根目录结构。
+Release 构建由 `STranslate.Plugin` SDK 自动生成 `.artifacts/plugins/STranslate.Plugin.Bailian.spkg`。测试覆盖三种端点、普通与 Qwen-MT 请求、SSE 分片和取消、错误脱敏、通用视觉模型归一化坐标、两种官方 OCR 坐标格式、图片翻译能力声明、双接口契约及安装包根目录结构。
 
 实现依据：[社区插件开发规范](https://github.com/STranslate/STranslate/blob/main/src/docs/community-plugin-development.md)、[SDK 配置机制](https://github.com/STranslate/STranslate/blob/main/src/docs/plugin-sdk-development.md)和[Qwen-OCR 文档](https://help.aliyun.com/zh/model-studio/qwen-vl-ocr)。
 

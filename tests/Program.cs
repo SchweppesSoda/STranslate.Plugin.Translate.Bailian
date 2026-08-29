@@ -14,12 +14,15 @@ var tests = new (string Name, Func<Task> Run)[]
     ("line-wise SSE and reasoning filtering", TestSse),
     ("line-wise SSE translation", TestStreamingTranslation),
     ("generic OCR request", TestGenericOcr),
+    ("generic OCR normalized coordinates", TestGenericCoordinates),
+    ("generic OCR main path", TestGenericOcrMainPath),
     ("location OCR coordinates", TestLocation),
     ("rotate_rect OCR coordinates", TestRotateRect),
     ("coordinate-free OCR fallback", TestOcrFallback),
     ("translation error redaction", TestErrorRedaction),
     ("translation cancellation", TestCancellation),
     ("combined translation and OCR class", TestInterfaces),
+    ("picture translation OCR capability", TestPictureTranslationCapability),
     ("release package layout", TestPackage)
 };
 
@@ -143,7 +146,41 @@ static Task TestGenericOcr()
     var json = JsonSerializer.Serialize(request);
     Contains("data:image/png;base64,", json);
     Contains("8388608", json);
+    Contains("normalized to 0..999", json);
+    Contains("items", json);
     return Task.CompletedTask;
+}
+
+static Task TestGenericCoordinates()
+{
+    var response = CompletionJson("```json\n{\"items\":[{\"text\":\"first line\",\"box\":[100,200,400,300]},{\"text\":\"second line\",\"box\":[[50,500],[450,500],[450,600],[50,600]]}]}\n```");
+    var result = BailianProtocol.ParseGenericOcr(response, 999, 999);
+    Equal(2, result.OcrContents.Count);
+    Equal("first line", result.OcrContents[0].Text);
+    Equal(4, result.OcrContents[0].BoxPoints.Count);
+    Near(100, result.OcrContents[0].BoxPoints[0].X);
+    Near(200, result.OcrContents[0].BoxPoints[0].Y);
+    Near(400, result.OcrContents[0].BoxPoints[2].X);
+    Near(300, result.OcrContents[0].BoxPoints[2].Y);
+    Equal(4, result.OcrContents[1].BoxPoints.Count);
+
+    var fallback = BailianProtocol.ParseGenericOcr(CompletionJson("plain OCR text"), 999, 999);
+    Equal("plain OCR text", fallback.OcrContents[0].Text);
+    Equal(0, fallback.OcrContents[0].BoxPoints.Count);
+    return Task.CompletedTask;
+}
+
+static async Task TestGenericOcrMainPath()
+{
+    var settings = ValidSettings();
+    settings.AccessMode = BillingMode.CodingPlan;
+    var main = new Main();
+    main.Init(ContextProxy.Create(settings, postResponse: CompletionJson("{\"items\":[{\"text\":\"line\",\"box\":[100,200,400,300]}]}")));
+    var result = await main.RecognizeAsync(new OcrRequest(PngBytes(), LangEnum.English, 999, 999), CancellationToken.None);
+    Equal(true, result.IsSuccess);
+    Equal("line", result.OcrContents[0].Text);
+    Equal(4, result.OcrContents[0].BoxPoints.Count);
+    Near(400, result.OcrContents[0].BoxPoints[2].X);
 }
 
 static Task TestLocation()
@@ -216,6 +253,19 @@ static Task TestInterfaces()
     return Task.CompletedTask;
 }
 
+static Task TestPictureTranslationCapability()
+{
+    var settings = ValidSettings();
+    settings.AccessMode = BillingMode.CodingPlan;
+    Equal(true, BailianConfig.SupportsCoordinateOcr(settings));
+    settings.Model = "glm-5";
+    Equal(false, BailianConfig.SupportsCoordinateOcr(settings));
+    settings.AccessMode = BillingMode.PayAsYouGo;
+    settings.Model = "qwen3.5-ocr";
+    Equal(true, BailianConfig.SupportsCoordinateOcr(settings));
+    return Task.CompletedTask;
+}
+
 static Task TestPackage()
 {
     var root = Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "..", "..", "..", ".."));
@@ -242,6 +292,11 @@ static byte[] PngBytes() => [137, 80, 78, 71, 13, 10, 26, 10, 0];
 
 static string NativeOcrJson(string coordinate) =>
     "{\"output\":{\"choices\":[{\"message\":{\"content\":[{\"text\":\"line\",\"ocr_result\":{\"words_info\":[{\"text\":\"line\"," + coordinate + "}]}}]}}]}}";
+
+static string CompletionJson(string content) => JsonSerializer.Serialize(new
+{
+    choices = new[] { new { message = new { content }, finish_reason = "stop" } }
+});
 
 static void Equal<T>(T expected, T actual)
 {

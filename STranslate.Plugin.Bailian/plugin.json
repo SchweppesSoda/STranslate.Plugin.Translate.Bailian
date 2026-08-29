@@ -3,7 +3,7 @@
   "Name": "百炼翻译与 OCR",
   "Description": "Alibaba Cloud Model Studio translation and OCR with pay-as-you-go, Coding Plan, and Token Plan.",
   "Author": "SchweppesSoda",
-  "Version": "2.3.1",
+  "Version": "2.3.2",
   "Website": "https://github.com/SchweppesSoda/STranslate.Plugin.Bailian",
   "ExecuteFileName": "STranslate.Plugin.Bailian.dll",
   "IconPath": "icon.png"

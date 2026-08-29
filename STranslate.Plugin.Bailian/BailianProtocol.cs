@@ -9,7 +9,7 @@ internal static class BailianProtocol
 {
     internal const int MaxImageDataUrlChars = 20 * 1024 * 1024;
     private const string TranslationInstruction = "You are a professional translation engine. Translate faithfully and naturally, preserving paragraphs, line breaks, lists, punctuation, names, numbers, and technical terms. Return only the translated text without explanations, labels, quotes, or Markdown fences.";
-    private const string OcrInstruction = "You are a precise OCR transcription engine. Transcribe every visible character without translating, summarizing, correcting, or inventing content. Preserve reading order, paragraphs, lists, and line breaks. Return only the recognized text.";
+    private const string OcrInstruction = "You are a precise OCR and text-localization engine. Locate and transcribe every visible text line without translating, summarizing, correcting, or inventing content. Return only the requested JSON object without Markdown fences or commentary.";
 
     public static Dictionary<string, object?> TranslationRequest(
         Settings settings,
@@ -80,7 +80,7 @@ internal static class BailianProtocol
                 new Dictionary<string, object?>
                 {
                     ["type"] = "text",
-                    ["text"] = $"Expected language: {expectedLanguage}.\nExtract all visible text. Preserve reading order and line breaks.\nDo not translate or explain. If no text is visible, return an empty string."
+                    ["text"] = $"Expected language: {expectedLanguage}.\nLocate and transcribe every visible text line in reading order. Return only compact JSON with this exact shape: {{\"items\":[{{\"text\":\"recognized line\",\"box\":[x1,y1,x2,y2]}}]}}. Each box is the tight axis-aligned boundary of that line. Coordinates must be integers normalized to 0..999 relative to the full image: top-left is (0,0), bottom-right is (999,999). Use one item per visual text line. Do not translate, explain, correct, or use Markdown. If no text is visible, return {{\"items\":[]}}."
                 }
             }
         };
@@ -231,6 +231,35 @@ internal static class BailianProtocol
         return result;
     }
 
+    public static OcrResult ParseGenericOcr(string response, int pixelWidth, int pixelHeight)
+    {
+        var completion = ParseCompletion(response);
+        JsonNode? root;
+        try
+        {
+            root = JsonNode.Parse(StripJsonFence(completion));
+        }
+        catch
+        {
+            return TextOcrResult(completion);
+        }
+
+        var items = root as JsonArray ?? root?["items"] as JsonArray;
+        if (items is null) return TextOcrResult(completion);
+
+        var result = new OcrResult();
+        foreach (var item in items)
+        {
+            var text = item?["text"]?.GetValue<string>()?.Trim();
+            if (string.IsNullOrEmpty(text)) continue;
+            var content = new OcrContent { Text = text };
+            foreach (var point in NormalizedCoordinates(item?["box"] ?? item?["bbox"] ?? item?["bbox_2d"], pixelWidth, pixelHeight))
+                content.BoxPoints.Add(point);
+            result.OcrContents.Add(content);
+        }
+        return result;
+    }
+
     public static OcrResult TextOcrResult(string text)
     {
         var result = new OcrResult();
@@ -293,6 +322,60 @@ internal static class BailianProtocol
         if (node is JsonValue) return node.GetValue<string>();
         if (node is not JsonArray array) return string.Empty;
         return string.Concat(array.Select(item => item?["text"]?.GetValue<string>() ?? string.Empty));
+    }
+
+    private static string StripJsonFence(string value)
+    {
+        var text = value.Trim();
+        if (!text.StartsWith("```", StringComparison.Ordinal)) return text;
+        var firstLineEnd = text.IndexOf('\n');
+        if (firstLineEnd < 0) return text;
+        text = text[(firstLineEnd + 1)..];
+        var closingFence = text.LastIndexOf("```", StringComparison.Ordinal);
+        return (closingFence >= 0 ? text[..closingFence] : text).Trim();
+    }
+
+    private static IEnumerable<BoxPoint> NormalizedCoordinates(JsonNode? node, int pixelWidth, int pixelHeight)
+    {
+        if (pixelWidth <= 0 || pixelHeight <= 0 || !TryCoordinateNumbers(node, out var values)) yield break;
+
+        float[] points = values.Length switch
+        {
+            4 => [values[0], values[1], values[2], values[1], values[2], values[3], values[0], values[3]],
+            8 => values,
+            _ => []
+        };
+        if (points.Length == 0) yield break;
+
+        var xs = points.Where((_, index) => index % 2 == 0).ToArray();
+        var ys = points.Where((_, index) => index % 2 == 1).ToArray();
+        if (xs.Max() <= xs.Min() || ys.Max() <= ys.Min()) yield break;
+
+        for (var index = 0; index < points.Length; index += 2)
+        {
+            var x = Math.Clamp(points[index], 0f, 999f) / 999f * pixelWidth;
+            var y = Math.Clamp(points[index + 1], 0f, 999f) / 999f * pixelHeight;
+            yield return new BoxPoint(x, y);
+        }
+    }
+
+    private static bool TryCoordinateNumbers(JsonNode? node, out float[] values)
+    {
+        values = [];
+        if (node is not JsonArray array) return false;
+        var flattened = array.Count == 4 && array.All(item => item is JsonArray)
+            ? array.SelectMany(item => (JsonArray)item!).ToArray()
+            : array.ToArray();
+        if (flattened.Length is not (4 or 8)) return false;
+
+        var parsed = new float[flattened.Length];
+        for (var index = 0; index < flattened.Length; index++)
+        {
+            if (!float.TryParse(flattened[index]?.ToString(), NumberStyles.Float, CultureInfo.InvariantCulture, out parsed[index]) || !float.IsFinite(parsed[index]))
+                return false;
+        }
+        values = parsed;
+        return true;
     }
 
     private static IEnumerable<BoxPoint> Coordinates(JsonNode? word)

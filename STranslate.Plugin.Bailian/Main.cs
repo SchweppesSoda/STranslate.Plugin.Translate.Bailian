@@ -81,7 +81,7 @@ public sealed class Main : LlmTranslatePluginBase, IOcrPlugin
         }
     }
 
-    public bool SupportBoxPoints() => BailianConfig.IsNativeCoordinateOcr(Settings);
+    public bool SupportBoxPoints() => BailianConfig.SupportsCoordinateOcr(Settings);
 
     public string? GetLanguage(LangEnum langEnum) => LanguageMap.TranslateName(langEnum);
 
@@ -107,7 +107,7 @@ public sealed class Main : LlmTranslatePluginBase, IOcrPlugin
                 body,
                 options,
                 cancellationToken);
-            return BailianProtocol.TextOcrResult(BailianProtocol.ParseCompletion(genericResponse));
+            return BailianProtocol.ParseGenericOcr(genericResponse, request.PixelWidth, request.PixelHeight);
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {

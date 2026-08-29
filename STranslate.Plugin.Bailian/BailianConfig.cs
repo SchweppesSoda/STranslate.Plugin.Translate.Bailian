@@ -60,6 +60,12 @@ internal static class BailianConfig
         settings.AccessMode == BillingMode.PayAsYouGo &&
         settings.Model.Trim().ToLowerInvariant() is "qwen3.5-ocr" or "qwen-vl-ocr";
 
+    public static bool SupportsCoordinateOcr(Settings settings)
+    {
+        if (IsNativeCoordinateOcr(settings)) return true;
+        return !Models.TryGetValue(settings.Model.Trim(), out var info) || info.Vision;
+    }
+
     public static bool IsOcrOnly(Settings settings) =>
         Models.TryGetValue(settings.Model.Trim(), out var info) && info.OcrOnly;
 
