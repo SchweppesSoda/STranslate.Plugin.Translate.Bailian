@@ -8,9 +8,11 @@ using STranslate.Plugin.Bailian;
 var tests = new (string Name, Func<Task> Run)[]
 {
     ("three billing endpoints", TestBillingEndpoints),
+    ("settings save and connection test", TestSettingsSaveAndConnection),
     ("chat and Qwen-MT requests", TestTranslationRequests),
     ("normal translation response", TestCompletion),
-    ("fragmented SSE and reasoning filtering", TestSse),
+    ("line-wise SSE and reasoning filtering", TestSse),
+    ("line-wise SSE translation", TestStreamingTranslation),
     ("generic OCR request", TestGenericOcr),
     ("location OCR coordinates", TestLocation),
     ("rotate_rect OCR coordinates", TestRotateRect),
@@ -42,12 +44,33 @@ Console.WriteLine($"{tests.Length} STranslate tests passed.");
 static Task TestBillingEndpoints()
 {
     var settings = ValidSettings();
+    Equal("https://dashscope.aliyuncs.com/compatible-mode/v1", BailianConfig.BaseUrl(settings));
     Equal("https://dashscope.aliyuncs.com/compatible-mode/v1/chat/completions", BailianConfig.ChatEndpoint(settings));
     settings.AccessMode = BillingMode.CodingPlan;
+    Equal("https://coding.dashscope.aliyuncs.com/v1", BailianConfig.BaseUrl(settings));
     Equal("https://coding.dashscope.aliyuncs.com/v1/chat/completions", BailianConfig.ChatEndpoint(settings));
     settings.AccessMode = BillingMode.TokenPlan;
+    Equal("https://token-plan.cn-beijing.maas.aliyuncs.com/compatible-mode/v1", BailianConfig.BaseUrl(settings));
     Equal("https://token-plan.cn-beijing.maas.aliyuncs.com/compatible-mode/v1/chat/completions", BailianConfig.ChatEndpoint(settings));
     return Task.CompletedTask;
+}
+
+static async Task TestSettingsSaveAndConnection()
+{
+    var settings = ValidSettings();
+    settings.AccessMode = BillingMode.CodingPlan;
+    var context = ContextProxy.Create(settings);
+    var main = new Main();
+    main.Init(context);
+
+    main.SaveSettings();
+    Equal(1, ContextProxy.For(context).SaveCount);
+
+    var message = await main.TestConnectionAsync();
+    Equal(2, ContextProxy.For(context).SaveCount);
+    Equal("连接成功：Coding Plan · qwen3.7-plus", message);
+    Equal("https://coding.dashscope.aliyuncs.com/v1/chat/completions", ContextProxy.For(context).Http.LastUrl);
+    Equal(false, ((Dictionary<string, object?>)ContextProxy.For(context).Http.LastBody!)["stream"]);
 }
 
 static Task TestTranslationRequests()
@@ -76,13 +99,38 @@ static Task TestCompletion()
 
 static Task TestSse()
 {
-    var parser = new BailianProtocol.SseAccumulator();
-    var output = parser.Append("data: {\"choices\":[{\"delta\":{\"reasoning_content\":\"secret\",\"con");
-    output += parser.Append("tent\":\"你\"}}]}\n\ndata: {\"choices\":[{\"delta\":{\"content\":\"好\"},\"finish_reason\":\"stop\"}]}\n\n");
-    output += parser.Append(string.Empty, true);
+    var output = BailianProtocol.ParseSseChunk(
+        "data: {\"choices\":[{\"delta\":{\"reasoning_content\":\"secret\",\"role\":\"assistant\"}}]}",
+        out var firstTruncated);
+    output += BailianProtocol.ParseSseChunk(
+        "data: {\"choices\":[{\"delta\":{\"content\":\"你\"}}]}",
+        out var secondTruncated);
+    output += BailianProtocol.ParseSseChunk(
+        "data: {\"choices\":[{\"delta\":{\"content\":\"好\"},\"finish_reason\":\"stop\"}]}",
+        out var thirdTruncated);
+    output += BailianProtocol.ParseSseChunk("data: [DONE]", out var doneTruncated);
     Equal("你好", output);
-    Equal(false, parser.FinishedByLength);
+    Equal(false, firstTruncated || secondTruncated || thirdTruncated || doneTruncated);
     return Task.CompletedTask;
+}
+
+static async Task TestStreamingTranslation()
+{
+    var settings = ValidSettings();
+    var main = new Main();
+    main.Init(ContextProxy.Create(settings, streamChunks:
+    [
+        "data: {\"choices\":[{\"delta\":{\"role\":\"assistant\",\"content\":\"\"}}]}",
+        "data: {\"choices\":[{\"delta\":{\"content\":\"你\"}}]}",
+        "data: {\"choices\":[{\"delta\":{\"content\":\"好\"},\"finish_reason\":\"stop\"}]}",
+        "data: [DONE]"
+    ]));
+    var result = new TranslateResult();
+    await main.TranslateAsync(
+        new TranslateRequest("hello", LangEnum.English, LangEnum.ChineseSimplified),
+        result);
+    Equal(true, result.IsSuccess);
+    Equal("你好", result.Text);
 }
 
 static Task TestGenericOcr()
@@ -221,6 +269,10 @@ internal class ContextProxy : DispatchProxy
 {
     private Settings _settings = null!;
     private IHttpService _httpService = null!;
+    public int SaveCount { get; private set; }
+    public HttpProxy Http => (HttpProxy)(object)_httpService;
+
+    public static ContextProxy For(IPluginContext context) => (ContextProxy)(object)context;
 
     public static IPluginContext Create(Settings settings, string? postResponse = null, string[]? streamChunks = null, bool waitAfterStream = false)
     {
@@ -231,14 +283,21 @@ internal class ContextProxy : DispatchProxy
         return context;
     }
 
-    protected override object? Invoke(MethodInfo? targetMethod, object?[]? args) => targetMethod?.Name switch
+    protected override object? Invoke(MethodInfo? targetMethod, object?[]? args)
     {
-        "get_HttpService" => _httpService,
-        "LoadSettingStorage" => _settings,
-        "SaveSettingStorage" => null,
-        "GetTranslation" => args?[0]?.ToString() ?? string.Empty,
-        _ => DefaultValue(targetMethod?.ReturnType)
-    };
+        if (targetMethod?.Name == "SaveSettingStorage")
+        {
+            SaveCount++;
+            return null;
+        }
+        return targetMethod?.Name switch
+        {
+            "get_HttpService" => _httpService,
+            "LoadSettingStorage" => _settings,
+            "GetTranslation" => args?[0]?.ToString() ?? string.Empty,
+            _ => DefaultValue(targetMethod?.ReturnType)
+        };
+    }
 
     private static object? DefaultValue(Type? type) => type is null || type == typeof(void)
         ? null
@@ -250,6 +309,8 @@ internal class HttpProxy : DispatchProxy
     private string _postResponse = "{\"choices\":[{\"message\":{\"content\":\"ok\"}}]}";
     private string[] _streamChunks = [];
     private bool _waitAfterStream;
+    public string? LastUrl { get; private set; }
+    public object? LastBody { get; private set; }
 
     public static IHttpService Create(string? postResponse, string[]? streamChunks, bool waitAfterStream)
     {
@@ -264,7 +325,11 @@ internal class HttpProxy : DispatchProxy
     protected override object? Invoke(MethodInfo? targetMethod, object?[]? args)
     {
         if (targetMethod?.Name == "PostAsync" && targetMethod.ReturnType == typeof(Task<string>))
+        {
+            LastUrl = args?[0]?.ToString();
+            LastBody = args?[1];
             return Task.FromResult(_postResponse);
+        }
         if (targetMethod?.Name == "StreamPostAsyncEnumerable")
         {
             var token = args?.OfType<CancellationToken>().LastOrDefault() ?? default;

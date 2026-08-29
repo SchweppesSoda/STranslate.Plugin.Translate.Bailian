@@ -180,27 +180,6 @@ internal static class BailianProtocol
         return output.ToString();
     }
 
-    internal sealed class SseAccumulator
-    {
-        private readonly StringBuilder _pending = new();
-
-        public bool FinishedByLength { get; private set; }
-
-        public string Append(string chunk, bool finish = false)
-        {
-            _pending.Append(chunk);
-            var text = _pending.ToString().Replace("\r\n", "\n", StringComparison.Ordinal);
-            var lastNewLine = text.LastIndexOf('\n');
-            if (!finish && lastNewLine < 0) return string.Empty;
-            var complete = finish ? text : text[..(lastNewLine + 1)];
-            _pending.Clear();
-            if (!finish) _pending.Append(text[(lastNewLine + 1)..]);
-            var addition = ParseSseChunk(complete, out var truncated);
-            FinishedByLength |= truncated;
-            return addition;
-        }
-    }
-
     public static OcrResult ParseNativeOcr(string response)
     {
         JsonNode root;

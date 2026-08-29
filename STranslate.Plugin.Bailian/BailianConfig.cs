@@ -60,6 +60,17 @@ internal static class BailianConfig
         settings.AccessMode == BillingMode.PayAsYouGo &&
         settings.Model.Trim().ToLowerInvariant() is "qwen3.5-ocr" or "qwen-vl-ocr";
 
+    public static bool IsOcrOnly(Settings settings) =>
+        Models.TryGetValue(settings.Model.Trim(), out var info) && info.OcrOnly;
+
+    public static string BillingModeLabel(string mode) => mode.Trim().ToLowerInvariant() switch
+    {
+        BillingMode.PayAsYouGo => "按量付费",
+        BillingMode.CodingPlan => "Coding Plan",
+        BillingMode.TokenPlan => "Token Plan",
+        _ => mode.Trim()
+    };
+
     public static void Validate(Settings settings, bool ocr)
     {
         if (string.IsNullOrWhiteSpace(settings.ApiKey))
@@ -89,11 +100,13 @@ internal static class BailianConfig
 
     public static string ChatEndpoint(Settings settings)
     {
-        var baseUrl = AutomaticBaseUrl(settings);
+        var baseUrl = BaseUrl(settings);
         return baseUrl.EndsWith("/chat/completions", StringComparison.OrdinalIgnoreCase)
             ? baseUrl
             : $"{baseUrl}/chat/completions";
     }
+
+    public static string BaseUrl(Settings settings) => AutomaticBaseUrl(settings);
 
     public static string NativeOcrEndpoint(Settings settings)
     {

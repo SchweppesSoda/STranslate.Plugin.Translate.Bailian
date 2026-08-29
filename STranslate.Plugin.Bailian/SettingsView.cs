@@ -9,26 +9,51 @@ internal sealed class SettingsView : UserControl
     private readonly Settings _settings;
     private readonly Action _save;
     private readonly Grid _grid = new() { Margin = new Thickness(16) };
+    private TextBox? _resolvedBaseUrl;
     private int _row;
 
-    public SettingsView(IPluginContext context, Settings settings, Action save, Action editPrompts)
+    public SettingsView(
+        IPluginContext context,
+        Settings settings,
+        Action save,
+        Func<Task<string>> testConnection,
+        Action editPrompts)
     {
         _settings = settings;
         _save = save;
         _grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(160) });
         _grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
 
+        AddActions(context, testConnection);
+
         AddCombo("计费模式", settings.AccessMode,
             [
                 new("按量付费", BillingMode.PayAsYouGo),
                 new("Coding Plan", BillingMode.CodingPlan),
                 new("Token Plan", BillingMode.TokenPlan)
-            ], value => settings.AccessMode = value);
+            ], value =>
+            {
+                settings.AccessMode = value;
+                RefreshBaseUrl();
+            });
         AddCombo("地域", settings.Region,
             [new("中国（北京）", "china"), new("国际（新加坡）", "singapore")],
-            value => settings.Region = value);
-        AddText("Workspace ID", settings.WorkspaceId, value => settings.WorkspaceId = value);
-        AddText("自定义按量 Base URL", settings.CustomBaseUrl, value => settings.CustomBaseUrl = value);
+            value =>
+            {
+                settings.Region = value;
+                RefreshBaseUrl();
+            });
+        AddText("Workspace ID", settings.WorkspaceId, value =>
+        {
+            settings.WorkspaceId = value;
+            RefreshBaseUrl();
+        });
+        AddText("自定义按量 Base URL", settings.CustomBaseUrl, value =>
+        {
+            settings.CustomBaseUrl = value;
+            RefreshBaseUrl();
+        });
+        AddResolvedBaseUrl();
         AddPassword("API Key", settings.ApiKey, value => settings.ApiKey = value);
         AddEditableCombo("模型", settings.Model, BailianConfig.PresetModels, value => settings.Model = value);
         AddInteger("最大输出 Token", settings.MaxTokens, value => settings.MaxTokens = value);
@@ -56,6 +81,101 @@ internal sealed class SettingsView : UserControl
             VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
             Content = _grid
         };
+    }
+
+    private void AddActions(IPluginContext context, Func<Task<string>> testConnection)
+    {
+        AddLabel("配置");
+        var saveButton = new Button
+        {
+            Content = "保存设置",
+            HorizontalAlignment = HorizontalAlignment.Left,
+            Padding = new Thickness(14, 5, 14, 5),
+            Margin = new Thickness(0, 0, 8, 0)
+        };
+        var testButton = new Button
+        {
+            Content = "测试连接",
+            HorizontalAlignment = HorizontalAlignment.Left,
+            Padding = new Thickness(14, 5, 14, 5)
+        };
+        var status = new TextBlock
+        {
+            Text = "更改会自动保存；也可以点击“保存设置”立即确认。",
+            Margin = new Thickness(0, 8, 0, 0),
+            TextWrapping = TextWrapping.Wrap
+        };
+        var buttons = new StackPanel { Orientation = Orientation.Horizontal };
+        buttons.Children.Add(saveButton);
+        buttons.Children.Add(testButton);
+        var panel = new StackPanel();
+        panel.Children.Add(buttons);
+        panel.Children.Add(status);
+
+        saveButton.Click += (_, _) =>
+        {
+            try
+            {
+                _save();
+                status.Text = "设置已保存。";
+                context.Snackbar.ShowSuccess("百炼设置已保存", 2500);
+            }
+            catch (Exception exception)
+            {
+                status.Text = $"保存失败：{exception.Message}";
+                context.Snackbar.ShowError(status.Text, 6000);
+            }
+        };
+        testButton.Click += async (_, _) =>
+        {
+            saveButton.IsEnabled = false;
+            testButton.IsEnabled = false;
+            testButton.Content = "测试中…";
+            status.Text = "正在使用当前计费模式、模型和 API Key 测试连接…";
+            try
+            {
+                var message = await testConnection();
+                status.Text = message;
+                context.Snackbar.ShowSuccess(message, 4000);
+            }
+            catch (Exception exception)
+            {
+                status.Text = $"连接失败：{exception.Message}";
+                context.Snackbar.ShowError(status.Text, 8000);
+            }
+            finally
+            {
+                saveButton.IsEnabled = true;
+                testButton.IsEnabled = true;
+                testButton.Content = "测试连接";
+            }
+        };
+        AddControl(panel);
+    }
+
+    private void AddResolvedBaseUrl()
+    {
+        AddLabel("当前 Base URL（只读）");
+        _resolvedBaseUrl = new TextBox
+        {
+            IsReadOnly = true,
+            TextWrapping = TextWrapping.Wrap
+        };
+        RefreshBaseUrl();
+        AddControl(_resolvedBaseUrl);
+    }
+
+    private void RefreshBaseUrl()
+    {
+        if (_resolvedBaseUrl is null) return;
+        try
+        {
+            _resolvedBaseUrl.Text = BailianConfig.BaseUrl(_settings);
+        }
+        catch (Exception exception)
+        {
+            _resolvedBaseUrl.Text = $"配置无效：{exception.Message}";
+        }
     }
 
     private void AddCombo(string label, string current, IReadOnlyList<Choice> choices, Action<string> update)
@@ -162,7 +282,7 @@ internal sealed class SettingsView : UserControl
         _grid.Children.Add(label);
     }
 
-    private void AddControl(Control control)
+    private void AddControl(FrameworkElement control)
     {
         control.Margin = new Thickness(0, 2, 0, 8);
         control.MinWidth = 260;

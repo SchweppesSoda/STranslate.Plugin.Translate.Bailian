@@ -22,7 +22,7 @@ public sealed class Main : LlmTranslatePluginBase, IOcrPlugin
     }
 
     public override Control GetSettingUI() =>
-        _settingsView ??= new SettingsView(Context, Settings, SaveSettings, EditPrompts);
+        _settingsView ??= new SettingsView(Context, Settings, SaveSettings, TestConnectionAsync, EditPrompts);
 
     public override string? GetSourceLanguage(LangEnum langEnum) => LanguageMap.TranslateName(langEnum);
 
@@ -52,15 +52,15 @@ public sealed class Main : LlmTranslatePluginBase, IOcrPlugin
             if (body["stream"] is true)
             {
                 var text = new StringBuilder();
-                var parser = new BailianProtocol.SseAccumulator();
-                await foreach (var chunk in Context.HttpService.StreamPostAsyncEnumerable(endpoint, body, options, cancellationToken))
+                var finishedByLength = false;
+                await foreach (var line in Context.HttpService.StreamPostAsyncEnumerable(endpoint, body, options, cancellationToken))
                 {
                     cancellationToken.ThrowIfCancellationRequested();
-                    text.Append(parser.Append(chunk));
+                    text.Append(BailianProtocol.ParseSseChunk(line, out var truncated));
+                    finishedByLength |= truncated;
                     if (text.Length > 0) result.Success(text.ToString());
                 }
-                text.Append(parser.Append(string.Empty, true));
-                if (parser.FinishedByLength)
+                if (finishedByLength)
                     throw new InvalidOperationException("Model Studio output was truncated; increase Max tokens or reduce the input.");
                 if (text.Length == 0) throw new InvalidOperationException("Model Studio stream did not include result text.");
                 result.Success(text.ToString());
@@ -125,10 +125,51 @@ public sealed class Main : LlmTranslatePluginBase, IOcrPlugin
     {
     }
 
-    private void SaveSettings()
+    internal void SaveSettings()
     {
         Settings.Prompts = [.. Prompts.Select(prompt => prompt.Clone())];
         Context.SaveSettingStorage<Settings>();
+    }
+
+    internal async Task<string> TestConnectionAsync()
+    {
+        SaveSettings();
+        try
+        {
+            var options = BailianProtocol.RequestOptions(Settings);
+            if (BailianConfig.IsOcrOnly(Settings))
+            {
+                BailianConfig.Validate(Settings, true);
+                var response = await Context.HttpService.PostAsync(
+                    BailianConfig.NativeOcrEndpoint(Settings),
+                    BailianProtocol.NativeOcrRequest(Settings, TestImage),
+                    options,
+                    CancellationToken.None);
+                _ = BailianProtocol.ParseNativeOcr(response);
+            }
+            else
+            {
+                BailianConfig.Validate(Settings, false);
+                var body = BailianProtocol.TranslationRequest(
+                    Settings,
+                    "hello",
+                    "English",
+                    "Simplified Chinese");
+                body["stream"] = false;
+                var response = await Context.HttpService.PostAsync(
+                    BailianConfig.ChatEndpoint(Settings),
+                    body,
+                    options,
+                    CancellationToken.None);
+                _ = BailianProtocol.ParseCompletion(response);
+            }
+
+            return $"连接成功：{BailianConfig.BillingModeLabel(Settings.AccessMode)} · {Settings.Model.Trim()}";
+        }
+        catch (Exception exception)
+        {
+            throw new InvalidOperationException(BailianProtocol.Redact(exception.Message, Settings.ApiKey));
+        }
     }
 
     private void EditPrompts()
@@ -136,4 +177,7 @@ public sealed class Main : LlmTranslatePluginBase, IOcrPlugin
         Context.GetPromptEditWindow(Prompts, ["system", "user"]).ShowDialog();
         SaveSettings();
     }
+
+    private static readonly byte[] TestImage = Convert.FromBase64String(
+        "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAusB9WlPpFcAAAAASUVORK5CYII=");
 }
