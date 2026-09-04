@@ -1,5 +1,10 @@
 # Changelog
 
+## 2.3.3 - 2026-09-04
+
+- 仓库、源码目录和 `.spkg` 资产采用 STranslate 市场要求的 `STranslate.Plugin.Translate.Bailian` 命名。
+- 保留原程序集名称和 `PluginID`，避免升级后丢失既有服务配置。
+
 ## 2.3.2 - 2026-08-29
 
 - 修复 Coding Plan、Token Plan 和普通视觉模型无法被选作“图片翻译 OCR”服务的问题。

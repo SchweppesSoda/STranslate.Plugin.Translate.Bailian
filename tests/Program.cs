@@ -269,7 +269,7 @@ static Task TestPictureTranslationCapability()
 static Task TestPackage()
 {
     var root = Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "..", "..", "..", ".."));
-    var package = Path.Combine(root, ".artifacts", "plugins", "STranslate.Plugin.Bailian.spkg");
+    var package = Path.Combine(root, ".artifacts", "plugins", "STranslate.Plugin.Translate.Bailian.spkg");
     True(File.Exists(package), $"Package not found: {package}");
     using var archive = ZipFile.OpenRead(package);
     var names = archive.Entries.Select(entry => entry.FullName).ToHashSet(StringComparer.OrdinalIgnoreCase);

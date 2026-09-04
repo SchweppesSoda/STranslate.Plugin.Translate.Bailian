@@ -8,6 +8,6 @@
     <AssemblyName>STranslate.Plugin.Bailian.Tests</AssemblyName>
   </PropertyGroup>
   <ItemGroup>
-    <ProjectReference Include="..\STranslate.Plugin.Bailian\STranslate.Plugin.Bailian.csproj" />
+    <ProjectReference Include="..\STranslate.Plugin.Translate.Bailian\STranslate.Plugin.Translate.Bailian.csproj" />
   </ItemGroup>
 </Project>

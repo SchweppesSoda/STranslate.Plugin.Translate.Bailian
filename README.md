@@ -4,7 +4,7 @@
 
 ## 安装
 
-从 [Releases](https://github.com/SchweppesSoda/STranslate.Plugin.Bailian/releases) 下载 `STranslate.Plugin.Bailian.spkg`，在 STranslate 的服务管理中安装，然后按需添加翻译或 OCR 服务。
+从 [Releases](https://github.com/SchweppesSoda/STranslate.Plugin.Translate.Bailian/releases) 下载 `STranslate.Plugin.Translate.Bailian.spkg`，在 STranslate 的服务管理中安装，然后按需添加翻译或 OCR 服务。
 
 STranslate 按服务实例分别保存配置；翻译与 OCR 可以各自选择模式、模型和 API Key，不需要额外的双凭证开关。
 
@@ -39,12 +39,12 @@ STranslate 按服务实例分别保存配置；翻译与 OCR 可以各自选择�
 需要 .NET 10 SDK：
 
 ```powershell
-dotnet restore .\STranslate.Plugin.Bailian\STranslate.Plugin.Bailian.csproj
-dotnet build .\STranslate.Plugin.Bailian\STranslate.Plugin.Bailian.csproj -c Release
+dotnet restore .\STranslate.Plugin.Translate.Bailian\STranslate.Plugin.Translate.Bailian.csproj
+dotnet build .\STranslate.Plugin.Translate.Bailian\STranslate.Plugin.Translate.Bailian.csproj -c Release
 dotnet run --project .\tests\STranslate.Plugin.Bailian.Tests.csproj -c Release
 ```
 
-Release 构建由 `STranslate.Plugin` SDK 自动生成 `.artifacts/plugins/STranslate.Plugin.Bailian.spkg`。测试覆盖三种端点、普通与 Qwen-MT 请求、SSE 分片和取消、错误脱敏、通用视觉模型归一化坐标、两种官方 OCR 坐标格式、图片翻译能力声明、双接口契约及安装包根目录结构。
+Release 构建由 `STranslate.Plugin` SDK 自动打包，并按市场规范输出 `.artifacts/plugins/STranslate.Plugin.Translate.Bailian.spkg`。包内继续使用 `STranslate.Plugin.Bailian.dll` 和原 `PluginID`，以保留既有服务配置。测试覆盖三种端点、普通与 Qwen-MT 请求、SSE 分片和取消、错误脱敏、通用视觉模型归一化坐标、两种官方 OCR 坐标格式、图片翻译能力声明、双接口契约及安装包根目录结构。
 
 实现依据：[社区插件开发规范](https://github.com/STranslate/STranslate/blob/main/src/docs/community-plugin-development.md)、[SDK 配置机制](https://github.com/STranslate/STranslate/blob/main/src/docs/plugin-sdk-development.md)和[Qwen-OCR 文档](https://help.aliyun.com/zh/model-studio/qwen-vl-ocr)。
 
