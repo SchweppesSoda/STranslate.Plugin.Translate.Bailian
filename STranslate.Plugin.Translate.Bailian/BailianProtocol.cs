@@ -127,11 +127,11 @@ internal static class BailianProtocol
         };
     }
 
-    public static Options RequestOptions(Settings settings) => new()
+    public static Options RequestOptions(string apiKey) => new()
     {
         Headers = new Dictionary<string, string>
         {
-            ["Authorization"] = $"Bearer {settings.ApiKey.Trim()}"
+            ["Authorization"] = $"Bearer {apiKey.Trim()}"
         }
     };
 

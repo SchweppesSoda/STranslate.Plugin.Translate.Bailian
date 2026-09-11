@@ -3,6 +3,7 @@
 ## Unreleased
 
 - Redact the normalized API Key used by requests even when saved settings contain leading or trailing whitespace.
+- Keep each request's API Key for error redaction when settings change before the response arrives.
 
 ## 2.3.3 - 2026-09-04
 

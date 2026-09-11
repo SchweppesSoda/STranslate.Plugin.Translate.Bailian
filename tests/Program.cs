@@ -20,6 +20,7 @@ var tests = new (string Name, Func<Task> Run)[]
     ("rotate_rect OCR coordinates", TestRotateRect),
     ("coordinate-free OCR fallback", TestOcrFallback),
     ("request error redaction", TestErrorRedaction),
+    ("in-flight API key redaction", TestInFlightKeyRedaction),
     ("translation cancellation", TestCancellation),
     ("combined translation and OCR class", TestInterfaces),
     ("picture translation OCR capability", TestPictureTranslationCapability),
@@ -245,6 +246,55 @@ static async Task TestErrorRedaction()
     }
 }
 
+static async Task TestInFlightKeyRedaction()
+{
+    foreach (var path in new[] { "translation", "stream", "ocr", "native-ocr", "connection", "native-connection" })
+    foreach (var transportError in new[] { false, true })
+    {
+        var settings = ValidSettings();
+        settings.ApiKey = "  sk-request-original \r\n";
+        settings.Stream = path == "stream";
+        if (path.StartsWith("native-", StringComparison.Ordinal)) settings.Model = "qwen-vl-ocr";
+        var response = new TaskCompletionSource<string>(TaskCreationOptions.RunContinuationsAsynchronously);
+        var context = ContextProxy.Create(settings, pendingResponse: response.Task);
+        var main = new Main();
+        main.Init(context);
+
+        var operation = RequestError(path, main);
+        True(!operation.IsCompleted, $"{path} did not wait for the response.");
+        Equal("Bearer sk-request-original", ContextProxy.For(context).Http.LastOptions?.Headers?["Authorization"]);
+        settings.ApiKey = "sk-request-replacement";
+        if (transportError)
+            response.SetException(new InvalidOperationException("bad sk-request-original"));
+        else
+            response.SetResult((path == "stream" ? "data: " : "") + "{\"error\":{\"message\":\"bad sk-request-original\"}}");
+
+        var error = await operation;
+        Contains("[REDACTED]", error);
+        Contains("sk-request-original", error, false);
+    }
+
+    static async Task<string> RequestError(string path, Main main)
+    {
+        if (path.EndsWith("connection", StringComparison.Ordinal))
+        {
+            try { await main.TestConnectionAsync(); }
+            catch (InvalidOperationException exception) { return exception.Message; }
+            throw new InvalidOperationException("Connection error was not reported.");
+        }
+        if (path.EndsWith("ocr", StringComparison.Ordinal))
+        {
+            var result = await main.RecognizeAsync(new OcrRequest(PngBytes(), LangEnum.English, 1, 1), CancellationToken.None);
+            Equal(false, result.IsSuccess);
+            return result.ErrorMessage ?? string.Empty;
+        }
+        var translation = new TranslateResult();
+        await main.TranslateAsync(new TranslateRequest("hello", LangEnum.English, LangEnum.ChineseSimplified), translation);
+        Equal(false, translation.IsSuccess);
+        return translation.Text ?? string.Empty;
+    }
+}
+
 static async Task TestCancellation()
 {
     var settings = ValidSettings();
@@ -348,12 +398,12 @@ internal class ContextProxy : DispatchProxy
 
     public static ContextProxy For(IPluginContext context) => (ContextProxy)(object)context;
 
-    public static IPluginContext Create(Settings settings, string? postResponse = null, string[]? streamChunks = null, bool waitAfterStream = false)
+    public static IPluginContext Create(Settings settings, string? postResponse = null, string[]? streamChunks = null, bool waitAfterStream = false, Task<string>? pendingResponse = null)
     {
         var context = DispatchProxy.Create<IPluginContext, ContextProxy>();
         var proxy = (ContextProxy)(object)context;
         proxy._settings = settings;
-        proxy._httpService = HttpProxy.Create(postResponse, streamChunks, waitAfterStream);
+        proxy._httpService = HttpProxy.Create(postResponse, streamChunks, waitAfterStream, pendingResponse);
         return context;
     }
 
@@ -383,16 +433,19 @@ internal class HttpProxy : DispatchProxy
     private string _postResponse = "{\"choices\":[{\"message\":{\"content\":\"ok\"}}]}";
     private string[] _streamChunks = [];
     private bool _waitAfterStream;
+    private Task<string>? _pendingResponse;
+    public Options? LastOptions { get; private set; }
     public string? LastUrl { get; private set; }
     public object? LastBody { get; private set; }
 
-    public static IHttpService Create(string? postResponse, string[]? streamChunks, bool waitAfterStream)
+    public static IHttpService Create(string? postResponse, string[]? streamChunks, bool waitAfterStream, Task<string>? pendingResponse)
     {
         var service = DispatchProxy.Create<IHttpService, HttpProxy>();
         var proxy = (HttpProxy)(object)service;
         if (postResponse is not null) proxy._postResponse = postResponse;
         if (streamChunks is not null) proxy._streamChunks = streamChunks;
         proxy._waitAfterStream = waitAfterStream;
+        proxy._pendingResponse = pendingResponse;
         return service;
     }
 
@@ -402,12 +455,14 @@ internal class HttpProxy : DispatchProxy
         {
             LastUrl = args?[0]?.ToString();
             LastBody = args?[1];
-            return Task.FromResult(_postResponse);
+            LastOptions = args?.OfType<Options>().SingleOrDefault();
+            return _pendingResponse ?? Task.FromResult(_postResponse);
         }
         if (targetMethod?.Name == "StreamPostAsyncEnumerable")
         {
             var token = args?.OfType<CancellationToken>().LastOrDefault() ?? default;
-            return Stream(_streamChunks, _waitAfterStream, token);
+            LastOptions = args?.OfType<Options>().SingleOrDefault();
+            return Stream(_streamChunks, _waitAfterStream, _pendingResponse, token);
         }
         throw new NotSupportedException(targetMethod?.Name);
     }
@@ -415,8 +470,10 @@ internal class HttpProxy : DispatchProxy
     private static async IAsyncEnumerable<string> Stream(
         IEnumerable<string> chunks,
         bool waitAfterStream,
+        Task<string>? pendingResponse,
         [EnumeratorCancellation] CancellationToken cancellationToken)
     {
+        if (pendingResponse is not null) yield return await pendingResponse.WaitAsync(cancellationToken);
         foreach (var chunk in chunks)
         {
             cancellationToken.ThrowIfCancellationRequested();

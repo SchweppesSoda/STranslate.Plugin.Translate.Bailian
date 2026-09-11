@@ -33,6 +33,7 @@ public sealed class Main : LlmTranslatePluginBase, IOcrPlugin
         TranslateResult result,
         CancellationToken cancellationToken = default)
     {
+        var apiKey = Settings.ApiKey;
         try
         {
             BailianConfig.Validate(Settings, false);
@@ -48,7 +49,7 @@ public sealed class Main : LlmTranslatePluginBase, IOcrPlugin
 
             var body = BailianProtocol.TranslationRequest(Settings, request.Text, source, target, SelectedPrompt);
             var endpoint = BailianConfig.ChatEndpoint(Settings);
-            var options = BailianProtocol.RequestOptions(Settings);
+            var options = BailianProtocol.RequestOptions(apiKey);
             if (body["stream"] is true)
             {
                 var text = new StringBuilder();
@@ -77,7 +78,7 @@ public sealed class Main : LlmTranslatePluginBase, IOcrPlugin
         }
         catch (Exception exception)
         {
-            result.Fail(BailianProtocol.Redact(exception.Message, Settings.ApiKey));
+            result.Fail(BailianProtocol.Redact(exception.Message, apiKey));
         }
     }
 
@@ -87,10 +88,11 @@ public sealed class Main : LlmTranslatePluginBase, IOcrPlugin
 
     public async Task<OcrResult> RecognizeAsync(OcrRequest request, CancellationToken cancellationToken)
     {
+        var apiKey = Settings.ApiKey;
         try
         {
             BailianConfig.Validate(Settings, true);
-            var options = BailianProtocol.RequestOptions(Settings);
+            var options = BailianProtocol.RequestOptions(apiKey);
             if (BailianConfig.IsNativeCoordinateOcr(Settings))
             {
                 var response = await Context.HttpService.PostAsync(
@@ -116,7 +118,7 @@ public sealed class Main : LlmTranslatePluginBase, IOcrPlugin
         catch (Exception exception)
         {
             var result = new OcrResult();
-            result.Fail(BailianProtocol.Redact(exception.Message, Settings.ApiKey));
+            result.Fail(BailianProtocol.Redact(exception.Message, apiKey));
             return result;
         }
     }
@@ -134,9 +136,10 @@ public sealed class Main : LlmTranslatePluginBase, IOcrPlugin
     internal async Task<string> TestConnectionAsync()
     {
         SaveSettings();
+        var apiKey = Settings.ApiKey;
         try
         {
-            var options = BailianProtocol.RequestOptions(Settings);
+            var options = BailianProtocol.RequestOptions(apiKey);
             if (BailianConfig.IsOcrOnly(Settings))
             {
                 BailianConfig.Validate(Settings, true);
@@ -168,7 +171,7 @@ public sealed class Main : LlmTranslatePluginBase, IOcrPlugin
         }
         catch (Exception exception)
         {
-            throw new InvalidOperationException(BailianProtocol.Redact(exception.Message, Settings.ApiKey));
+            throw new InvalidOperationException(BailianProtocol.Redact(exception.Message, apiKey));
         }
     }
 
