@@ -270,7 +270,9 @@ internal static class BailianProtocol
     public static string Redact(string? message, string? apiKey)
     {
         var value = string.IsNullOrWhiteSpace(message) ? "Unknown Model Studio error." : message;
-        if (!string.IsNullOrWhiteSpace(apiKey)) value = value.Replace(apiKey, "[REDACTED]", StringComparison.Ordinal);
+        // RequestOptions sends the trimmed key; redact that exact wire value too.
+        var credential = apiKey?.Trim();
+        if (!string.IsNullOrEmpty(credential)) value = value.Replace(credential, "[REDACTED]", StringComparison.Ordinal);
         return value.Length > 2000 ? value[..2000] : value;
     }
 

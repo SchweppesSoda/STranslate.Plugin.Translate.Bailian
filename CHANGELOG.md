@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- Redact the normalized API Key used by requests even when saved settings contain leading or trailing whitespace.
+
 ## 2.3.3 - 2026-09-04
 
 - 仓库、源码目录和 `.spkg` 资产采用 STranslate 市场要求的 `STranslate.Plugin.Translate.Bailian` 命名。

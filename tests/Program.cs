@@ -19,7 +19,7 @@ var tests = new (string Name, Func<Task> Run)[]
     ("location OCR coordinates", TestLocation),
     ("rotate_rect OCR coordinates", TestRotateRect),
     ("coordinate-free OCR fallback", TestOcrFallback),
-    ("translation error redaction", TestErrorRedaction),
+    ("request error redaction", TestErrorRedaction),
     ("translation cancellation", TestCancellation),
     ("combined translation and OCR class", TestInterfaces),
     ("picture translation OCR capability", TestPictureTranslationCapability),
@@ -214,16 +214,35 @@ static Task TestOcrFallback()
 
 static async Task TestErrorRedaction()
 {
-    var settings = ValidSettings();
-    settings.Stream = false;
-    settings.ApiKey = "sk-secret";
-    var main = new Main();
-    main.Init(ContextProxy.Create(settings, postResponse: "{\"error\":{\"message\":\"bad sk-secret\"}}"));
-    var result = new TranslateResult();
-    await main.TranslateAsync(new TranslateRequest("hello", LangEnum.English, LangEnum.ChineseSimplified), result);
-    Equal(false, result.IsSuccess);
-    Contains("[REDACTED]", result.Text ?? string.Empty);
-    Contains("sk-secret", result.Text ?? string.Empty, false);
+    foreach (var key in new[] { "sk-secret", "  sk-secret \r\n" })
+    {
+        var settings = ValidSettings();
+        settings.Stream = false;
+        settings.ApiKey = key;
+        var main = new Main();
+        main.Init(ContextProxy.Create(settings, postResponse: "{\"error\":{\"message\":\"bad sk-secret\"}}"));
+        var result = new TranslateResult();
+        await main.TranslateAsync(new TranslateRequest("hello", LangEnum.English, LangEnum.ChineseSimplified), result);
+        Equal(false, result.IsSuccess);
+        Contains("[REDACTED]", result.Text ?? string.Empty);
+        Contains("sk-secret", result.Text ?? string.Empty, false);
+
+        // OCR and connection failures use the same boundary as translation.
+        var ocr = await main.RecognizeAsync(new OcrRequest(PngBytes(), LangEnum.English, 1, 1), CancellationToken.None);
+        Equal(false, ocr.IsSuccess);
+        Contains("[REDACTED]", ocr.ErrorMessage ?? string.Empty);
+        Contains("sk-secret", ocr.ErrorMessage ?? string.Empty, false);
+        try
+        {
+            await main.TestConnectionAsync();
+            throw new InvalidOperationException("Connection error was not reported.");
+        }
+        catch (InvalidOperationException exception)
+        {
+            Contains("[REDACTED]", exception.Message);
+            Contains("sk-secret", exception.Message, false);
+        }
+    }
 }
 
 static async Task TestCancellation()
